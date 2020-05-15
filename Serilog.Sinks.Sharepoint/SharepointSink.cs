@@ -1,9 +1,7 @@
 ﻿using Microsoft.SharePoint.Client;
-using Serilog.Configuration;
 using Serilog.Core;
 using Serilog.Events;
 using System;
-using System.Linq;
 
 namespace Serilog
 {
@@ -23,38 +21,27 @@ namespace Serilog
         {
             this.context = context;
             this.detailFieldName = detailFieldName;
-            ListCollection listCollection = context.Web.Lists;
 
-            context.Load(listCollection, lists => lists
-                .Include(list => list.Title)
-                .Where(list => list.Title == listName));
-
-            context.ExecuteQuery();
-
-            if (listCollection.Count > 0)
+            var createView = false;
+            if (!context.ListExists(listName).GetAwaiter().GetResult())
             {
-                this.list = context.Web.Lists.GetByTitle(listName);
-            }
-            else
-            {
-                this.list = context.Web.Lists.Add(
-                    new ListCreationInformation()
-                    {
-                        Title = listName,
-                        TemplateType = (int)ListTemplateType.GenericList
-                    });
-                context.ExecuteQuery();
+                context.CreateList(listName).GetAwaiter().GetResult();
+                createView = true;
             }
 
-            context.Load(list.Fields);
-            context.ExecuteQuery();
+            if (!list.ContainsField(detailFieldName).GetAwaiter().GetResult())
+                list.AddNoteField(detailFieldName).GetAwaiter().GetResult();
 
-            if (!list.Fields.Any(f => f.InternalName == detailFieldName))
+            if (createView)
             {
-                list.Fields.AddFieldAsXml(
-                    $"<Field Type='Note' DisplayName='{detailFieldName}'/>", true, AddFieldOptions.AddFieldToDefaultView);
-
-                list.Update();
+                var view = list.DefaultView;
+                view.ViewFields.RemoveAll();
+                view.ViewFields.Add("Created");
+                view.ViewFields.Add("Title");
+                view.ViewFields.Add(detailFieldName);
+                view.ViewFields.Add("Author");
+                view.ViewQuery = "<OrderBy><FieldRef Name='ID' Ascending='FALSE' /></OrderBy>";
+                view.Update();
                 context.ExecuteQuery();
             }
 
@@ -80,48 +67,6 @@ namespace Serilog
             catch
             {
             }
-        }
-    }
-
-    public static class SharepointSinkExtensions
-    {
-        public static LoggerConfiguration Sharepoint(
-                  this LoggerSinkConfiguration loggerConfiguration,
-                  ClientContext context,
-                  string listName = "Log",
-                  string detailFieldName = "LogDetail",
-                  IFormatProvider formatProvider = null)
-        {
-            return loggerConfiguration.Sink(new SharepointSink(context, listName, detailFieldName, formatProvider));
-        }
-    }
-
-    internal class SharepointDefaultFormatter : ICustomFormatter
-    {
-        public string Format(string format, object arg, IFormatProvider formatProvider)
-        {
-            if (!(arg is LogEvent logEvent))
-                return format;
-
-            var sufix = logEvent.Exception == null
-                ? ""
-                : logEvent.Exception.ToString();
-
-            if (string.IsNullOrEmpty(sufix))
-                return format;
-
-            return $@"{format}
-
-=========================================
-{sufix}";
-        }
-    }
-
-    internal class SharepointDefaultFormatProvider : IFormatProvider
-    {
-        public object GetFormat(Type formatType)
-        {
-            return new SharepointDefaultFormatter();
         }
     }
 }
