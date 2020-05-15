@@ -25,9 +25,13 @@ namespace Serilog
             var createView = false;
             if (!context.ListExists(listName).GetAwaiter().GetResult())
             {
-                context.CreateList(listName).GetAwaiter().GetResult();
+                list = context.CreateList(listName).GetAwaiter().GetResult();
+                list.ImageUrl = "/_layouts/15/images/itissl.gif?rev=45";
+                list.Update();
                 createView = true;
             }
+            else
+                list = context.GetList(listName).GetAwaiter().GetResult();
 
             if (!list.ContainsField(detailFieldName).GetAwaiter().GetResult())
                 list.AddNoteField(detailFieldName).GetAwaiter().GetResult();
